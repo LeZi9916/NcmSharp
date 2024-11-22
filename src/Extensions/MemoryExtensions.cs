@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace NcmSharp;
+namespace NcmSharp.Extensions;
 public static class MemoryExtensions
 {
     public static int Read(this MemoryStream source, Span<byte> buffer, int offset, int count)
