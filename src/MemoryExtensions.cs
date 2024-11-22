@@ -7,10 +7,10 @@ using System.Threading.Tasks;
 namespace NcmSharp;
 public static class MemoryExtensions
 {
-    public static int Read(this MemoryStream source,Span<byte> buffer, int offset,int count)
+    public static int Read(this MemoryStream source, Span<byte> buffer, int offset, int count)
     {
         var read = 0;
-        while(true)
+        while (true)
         {
             var pos = read + offset;
             if (pos == buffer.Length)

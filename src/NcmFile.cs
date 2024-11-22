@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipelines;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,12 +20,12 @@ public struct NcmFile
     {
         35,49,52,108,106,107,95,33,92,93,38,48,85,60,39,40
     };
-    
+
     public required byte[] KeyBox { get; init; }
     public required NcmMeta Meta { get; init; }
     public required byte[] RawAlbumCover { get; init; }
     public required byte[] RawAudioTrack { get; init; }
-    
+
 
     public NcmFile()
     {
@@ -37,17 +38,17 @@ public struct NcmFile
 
         using var resultBufferWriter = new MemoryStream(resultBuffer);
         using var rawAudioTrackReader = new MemoryStream(RawAudioTrack);
-        await Task.Run(() => 
+        await Task.Run(() =>
         {
             Span<byte> buffer = stackalloc byte[0x8000];
             var read = rawAudioTrackReader.Read(buffer, 0, buffer.Length);
 
             while (read > 0)
             {
-                for (int i = 0; i < read; i++)
+                for (var i = 0; i < read; i++)
                 {
-                    var j = (i + 1) & 0xff;
-                    buffer[i] ^= (byte)(keyBox[(keyBox[j] + keyBox[(keyBox[j] + j) & 0xff]) & 0xff]);
+                    var j = i + 1 & 0xff;
+                    buffer[i] ^= keyBox[keyBox[j] + keyBox[keyBox[j] + j & 0xff] & 0xff];
                 }
                 resultBufferWriter.Write(buffer.Slice(0, read));
                 read = rawAudioTrackReader.Read(buffer, 0, buffer.Length);
@@ -57,6 +58,24 @@ public struct NcmFile
     }
     public async Task DumpAsync(string outputPath)
     {
+        if (File.Exists(outputPath))
+        {
+            var fileInfo = new FileInfo(outputPath);
+            var filename = fileInfo.Name;
+            var dirPath = fileInfo.Directory!.FullName;
+            var ext = fileInfo.Extension;
+
+            for (var i = 1; i < 99; i++)
+            {
+                var newFilename = $"{filename}_{i}{ext}";
+                var newPath = Path.Combine(dirPath, newFilename);
+                if (!File.Exists(newPath))
+                {
+                    outputPath = newPath;
+                    break;
+                }
+            }
+        }
         using var fileWriter = File.Create(outputPath);
         var result = await DumpAsync();
         await fileWriter.WriteAsync(result);
@@ -81,6 +100,7 @@ public struct NcmFile
             return false;
         }
     }
+
     public static async Task<NcmFile> ReadFileAsync(string filePath)
     {
         if (!IsValidFile(filePath))
@@ -105,13 +125,13 @@ public struct NcmFile
         var decodedMetaData = Convert.FromBase64String(metaBase64);
         var decryptedMetaData = PKCS7Unpadding(await DecryptAsync(META_AES_KEY, decodedMetaData));
         using var metaStream = new MemoryStream(decryptedMetaData.Slice(6).ToArray());
-        var ncmMeta = await JsonSerializer.DeserializeAsync<NcmMeta>(metaStream);
+        var ncmMeta = await JsonSerializer.DeserializeAsync(metaStream, NcmMetaJsonContect.Default.NcmMeta);
 
         // Skip cover crc data
         fileReader.Seek(9, SeekOrigin.Current);
         var albumCoverLen = binReader.ReadInt32();
         var rawAlbumCover = binReader.ReadBytes(albumCoverLen);
-        byte[] rawAudioTrack = new byte[fileReader.Length - fileReader.Position];
+        var rawAudioTrack = new byte[fileReader.Length - fileReader.Position];
         var read = await fileReader.ReadAsync(rawAudioTrack);
 
         return new NcmFile()
@@ -122,9 +142,24 @@ public struct NcmFile
             RawAudioTrack = rawAudioTrack,
         };
     }
+    public static async Task<NcmFile> ReadFileAndDumpAsync(string filePath, string outputPath)
+    {
+        var ncmFile = await ReadFileAsync(filePath);
+        var meta = ncmFile.Meta;
+        var artist = meta.Artist?.FirstOrDefault()?.FirstOrDefault() ?? "Undefined";
+        var filename = $"{meta.MusicName} - {artist}.{meta.Format}";
+        var invalidChar = Path.GetInvalidFileNameChars();
+        foreach (var c in invalidChar)
+        {
+            if (filename.Contains(c))
+                filename = filename.Replace(c, '_');
+        }
+        await ncmFile.DumpAsync(Path.Combine(outputPath, filename));
+        return ncmFile;
+    }
     static async ValueTask<byte[]> GenerateKeyBoxAsync(Memory<byte> key)
     {
-        return await Task.Run(() => 
+        return await Task.Run(() =>
         {
             Span<byte> keyBox = stackalloc byte[256];
             var _key = key.Span;
@@ -133,9 +168,9 @@ public struct NcmFile
             byte c = 0;
             var keyOffset = 0;
 
-            for (int i = 0; i < keyBox.Length; i++)
+            for (var i = 0; i < keyBox.Length; i++)
             {
-                c = (byte)((keyBox[i] + c + _key[keyOffset]) & 0xff);
+                c = (byte)(keyBox[i] + c + _key[keyOffset] & 0xff);
                 keyOffset++;
                 if (keyOffset >= key.Length)
                     keyOffset = 0;
@@ -145,9 +180,9 @@ public struct NcmFile
             return keyBox.ToArray();
         });
     }
-    static Span<byte> XOR(Span<byte> source,byte value)
+    static Span<byte> XOR(Span<byte> source, byte value)
     {
-        for (var i = 0;i < source.Length;i++) 
+        for (var i = 0; i < source.Length; i++)
             source[i] ^= value;
         return source;
     }
