@@ -1,6 +1,6 @@
 # NcmSharp
 
-An ncm format encrypted audio file CSharp decryption library
+A CSharp library for decrypting ncm format encrypted audio files
 
 Can convert encrypted audio files in ncm format to flac or mp3 audio files
 
