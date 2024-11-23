@@ -20,6 +20,8 @@ var outputPath = $"{meta.MusicName} - {artist}.{meta.Format}";
 await fileInfo.DumpAsFileAsync(outputPath);
 ```
 
+See also [LeZi9916/NcmSharpCLI](https://github.com/LeZi9916/NcmSharpCLI)
+
 ## License
 
 MIT license
